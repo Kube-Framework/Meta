@@ -3,7 +3,7 @@ project(KubeMetaTests)
 get_filename_component(KubeMetaTestsDir ${CMAKE_CURRENT_LIST_FILE} PATH)
 
 set(KubeMetaTestsSources
-    ${KubeMetaTestsDir}/tests_Dummy.cpp
+    ${KubeMetaTestsDir}/tests_Resolver.cpp
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${KubeMetaTestsSources})

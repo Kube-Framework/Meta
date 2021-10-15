@@ -6,8 +6,11 @@ set(KubeMetaSources
     ${KubeMetaDir}/Meta.hpp
     ${KubeMetaDir}/Meta.cpp
     ${KubeMetaDir}/Base.hpp
+    ${KubeMetaDir}/Utils.hpp
     ${KubeMetaDir}/Type.hpp
     ${KubeMetaDir}/Type.cpp
+    ${KubeMetaDir}/Resolver.hpp
+    ${KubeMetaDir}/Resolver.cpp
 )
 
 add_library(${PROJECT_NAME} ${KubeMetaSources})

@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "Resolver.hpp"
+
 namespace kF::Meta
 {
 }
