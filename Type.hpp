@@ -91,20 +91,23 @@ public:
         using ConstIteratorFunc = Var(*)(const Instance instance);
 
 
+        /* -- High frequency access cacheline -- */
+
         // Runtime registerable data
         TypeId typeId;                                          // Identifier of the type
         MetaTinyFlatVector<TypeId> baseIds {};                  // Base classes
         MetaTinyFlatVector<FunctionName> functionNames {};      // Functions names
         MetaTinyFlatVector<EnumName> enumNames {};              // Enumeration names
-        std::string_view name;                                  // Literal name of the type
 
         // Compile-time Type meta-data
         const std::type_index typeIndex;                        // Index of the type
-        const std::uint32_t typeSize;                           // Size of the type
-        const std::uint32_t typeAlignment;                      // Alignment of the type
+        const std::size_t typeSize;                             // Size of the type
+        const std::size_t typeAlignment;                        // Alignment of the type
 
         // Destructor function
         const DestructorFunc destructorFunc;                    // ~Type(void)
+
+        /* -- Medium frequency access data --  */
 
         // Constructor functions
         const DefaultConstructorFunc defaultConstructorFunc;    // Type(void)
@@ -144,6 +147,7 @@ public:
         // Binary Assignments functions
         const BinaryAssignmentFunc additionAssignmentFunc;      // Type &operator+=(const Type &other)
         const BinaryAssignmentFunc substractionAssignmentFunc;  // Type &operator-=(const Type &other)
+        const BinaryAssignmentFunc multiplyAssignmentFunc;      // Type &operator*=(const Type &other)
         const BinaryAssignmentFunc divideAssignmentFunc;        // Type &operator/=(const Type &other)
         const BinaryAssignmentFunc moduloAssignmentFunc;        // Type &operator%=(const Type &other)
         const BinaryAssignmentFunc bitwiseAndAssignmentFunc;    // Type &operator&=(const Type &other)
@@ -171,6 +175,11 @@ public:
         const IteratorFunc endFunc;                             // Iterator end(void)
         const IteratorFunc constBeginFunc;                      // const Iterator begin(void) const
         const IteratorFunc constEndFunc;                        // const Iterator end(void) const
+
+        /* -- Low frequency access data --  */
+
+        // Type description
+        std::string_view name;                                  // Literal name of the type
 
 
         /** @brief Create a descriptor of a given type */

@@ -46,37 +46,37 @@ class kF::Meta::TypeId
 {
 public:
     /** @brief Destructor */
-    constexpr ~TypeId(void) noexcept = default;
+    ~TypeId(void) noexcept = default;
 
     /** @brief Constructor */
-    constexpr TypeId(void) noexcept = default;
+    TypeId(void) noexcept = default;
 
     /** @brief Copy constructor */
-    constexpr TypeId(const TypeId &other) noexcept = default;
+    TypeId(const TypeId &other) noexcept = default;
 
     /** @brief Initialization constructor */
-    constexpr TypeId(const NamespaceName namespaceName, const TypeName typeName) noexcept
+    TypeId(const NamespaceName namespaceName, const TypeName typeName) noexcept
         : _namespaceName(namespaceName), _typeName(typeName) {}
 
     /** @brief Copy assignment */
-    constexpr TypeId &operator=(const TypeId &other) noexcept = default;
+    TypeId &operator=(const TypeId &other) noexcept = default;
 
 
     /** @brief Equality operator */
-    [[nodiscard]] constexpr bool operator==(const TypeId &other) const noexcept { return value() == other.value(); }
+    [[nodiscard]] bool operator==(const TypeId &other) const noexcept { return value() == other.value(); }
 
     /** @brief Inequality operator */
-    [[nodiscard]] constexpr bool operator!=(const TypeId &other) const noexcept { return value() != other.value(); }
+    [[nodiscard]] bool operator!=(const TypeId &other) const noexcept { return value() != other.value(); }
 
 
     /** @brief Namespace name getter */
-    [[nodiscard]] constexpr NamespaceName namespaceName(void) const noexcept { return _namespaceName; }
+    [[nodiscard]] NamespaceName namespaceName(void) const noexcept { return _namespaceName; }
 
     /** @brief Type name getter */
-    [[nodiscard]] constexpr TypeName typeName(void) const noexcept { return _typeName; }
+    [[nodiscard]] TypeName typeName(void) const noexcept { return _typeName; }
 
     /** @brief Integral value representation getter */
-    [[nodiscard]] constexpr const std::uint64_t &value(void) const noexcept { return *reinterpret_cast<const std::uint64_t *>(this); }
+    [[nodiscard]] const std::uint64_t &value(void) const noexcept { return *reinterpret_cast<const std::uint64_t *>(this); }
 
 private:
     NamespaceName _namespaceName;
