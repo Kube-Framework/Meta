@@ -12,10 +12,10 @@
 #include <Kube/Core/SmallVector.hpp>
 
 #include "Base.hpp"
-#include "Var.hpp"
 
 namespace kF::Meta
 {
+    class Var;
     class Type;
     class TypeRef;
 }
@@ -229,5 +229,3 @@ private:
 };
 
 static_assert_fit_eighth_cacheline(kF::Meta::Type);
-
-#include "Type.ipp"

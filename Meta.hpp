@@ -5,8 +5,17 @@
 
 #pragma once
 
+// Utility
+#include "Base.hpp"
+#include "Utils.hpp"
+
+// Meta-classes
+#include "Type.hpp"
+#include "Var.hpp"
+
+// Managers
 #include "Resolver.hpp"
 
-namespace kF::Meta
-{
-}
+// Meta-classes implementations
+#include "Type.ipp"
+#include "Var.ipp"

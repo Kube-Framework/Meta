@@ -5,36 +5,37 @@
 
 #include "Var.hpp"
 
+inline kF::Meta::~Var(void)
+{
+    destroy<ResetMembers::No>();
+}
+
+inline kF::Meta::Var(const Var &other)
+{
+    emplace<DestroyInstance::No>(other);
+}
+
+inline kF::Meta::Var(Var &&other)
+{
+    emplace<DestroyInstance::No>(std::move(other));
+}
+
 inline const void *kF::Meta::Var::data(void) const noexcept
 {
-    if (_state == State::Undefined) [[unlikely]]
-        return nullptr;
-    else if (static_cast<std::uint32_t>(_state) < static_cast<std::uint32_t>(State::Allocation)) [[likely]]
+    const auto s = static_cast<std::uint32_t>(_state);
+    if (s != State::Undefined && s < static_cast<std::uint32_t>(State::Allocation)) [[likely]]
         return data<InstanceOptimized::Yes>();
     else
         return data<InstanceOptimized::No>();
-
-    switch (_state) {
-    case State::Value:
-    case State::TrivialValue:
-        return data<InstanceOptimized::Yes>();
-    case State::Allocation:
-    case State::TrivialAllocation:
-    case State::Reference:
-    case State::ConstantReference:
-        return data<InstanceOptimized::No>();
-    default:
-        return nullptr;
-    }
 }
 
 template<kF::Meta::Var::InstanceOptimized IsInstanceOptimized>
 inline const void *kF::Meta::Var::data(void) const noexcept
 {
     if constexpr (IsInstanceOptimized == IsInstanceOptimized::Yes) {
-        return reinterpret_cast<const void *>(&_storage);
+        return reinterpret_cast<const void *>(&_cache);
     } else {
-        return *reinterpret_cast<const void **>(&_storage);
+        return reinterpret_cast<const void *&>(_cache);
     }
 }
 
@@ -42,43 +43,37 @@ template<kF::Meta::Var::ResetMembers ShouldResetMembers>
 inline void kF::Meta::Var::destroy(void)
 {
     switch (_state) {
-    case State::Undefined:
-        return destroy<State::Undefined, ShouldResetMembers>();
     case State::Value:
-        return destroy<State::Value, ShouldResetMembers>();
-    case State::TrivialValue:
-        return destroy<State::TrivialValue, ShouldResetMembers>();
+        return destroy<ShouldResetMembers, InstanceTrivial::No, InstanceAllocated::No>();
     case State::Allocation:
-        return destroy<State::Allocation, ShouldResetMembers>();
+        return destroy<ShouldResetMembers, InstanceTrivial::No, InstanceAllocated::Yes>();
     case State::TrivialAllocation:
-        return destroy<State::TrivialAllocation, ShouldResetMembers>();
-    case State::Reference:
-        return destroy<State::Reference, ShouldResetMembers>();
-    case State::ConstantReference:
-        return destroy<State::ConstantReference, ShouldResetMembers>();
+        return destroy<ShouldResetMembers, InstanceTrivial::Yes, InstanceAllocated::Yes>();
     default:
-        return;
+        return destroy<ShouldResetMembers, InstanceTrivial::Yes, InstanceAllocated::No>();
     }
 }
 
-template<kF::Meta::Var::State VarState, kF::Meta::Var::ResetMembers ShouldResetMembers>
-inline void kF::Meta::Var::destroy(void)
+template<kF::Meta::Var::ResetMembers ShouldResetMembers, kF::Meta::Var::InstanceTrivial IsInstanceTrivial, kF::Meta::Var::InstanceAllocated IsInstanceAllocated>
+inline void kF::Meta::Var::destroy(void) noexcept(IsInstanceTrivial == kF::Meta::Var::InstanceTrivial::Yes)
 {
     // If the type is a non-trivial value, destroy it
-    if constexpr (VarState == State::Value) {
-        const auto desc = _type.descriptor();
-        const auto instance = data<VarState>();
-        if (desc->destructorFunc)
-            desc->destructorFunc(instance);
-    // If the type is an allocation, destroy (only non-trivial types) and deallocate it
-    } else if constexpr (VarState == State::Allocation || VarState == State::TrivialAllocation) {
-        const auto desc = _type.descriptor();
-        const auto instance = data<VarState>();
-        if constexpr (VarState == State::Allocation) {
+    if constexpr (IsInstanceAllocated == InstanceAllocated::No) {
+        if constexpr (IsInstanceTrivial == InstanceTrivial::No) {
+            const auto desc = _type.descriptor();
+            const auto instance = data<VarState>();
             if (desc->destructorFunc)
                 desc->destructorFunc(instance);
         }
-        Meta::MetaAllocator::Deallocate(instance, desc->typeSize, desc->typeAlignment);
+    // If the type is an allocation, destroy (only non-trivial types) and deallocate it
+    } else {
+        const auto desc = _type.descriptor();
+        const auto instance = data<VarState>();
+        if constexpr (IsInstanceTrivial == InstanceTrivial::No) {
+            if (desc->destructorFunc)
+                desc->destructorFunc(instance);
+        }
+        Deallocate(instance, desc->typeSize, desc->typeAlignment);
     }
 
     if constexpr (ShouldResetMembers == ResetMembers::Yes) {
@@ -87,30 +82,47 @@ inline void kF::Meta::Var::destroy(void)
     }
 }
 
-
 template<typename Type, kF::Meta::Var::DestroyInstance ShouldDestroyInstance>
 inline void kF::Meta::Var::emplace(Type &&other) noexcept(kF::Meta::Var::IsEmplaceNothrow<Type>)
 {
-    if constexpr (ShouldDestroyInstance) {
-        destroy<ResetMembers::No>();
+    using ConcreteType = std::remove_cvref_t<Type>;
+
+    // The type fits into the optimized cache
+    if constexpr (IsOptimized<Type>) {
+        if constexpr (ShouldDestroyInstance == ShouldDestroyInstance::Yes) {
+            destroy<ResetMembers::No>();
+        }
+        std::construct_at<Type>(&_cache, std::forward<Type>(other));
+        if constexpr (std::is_trivial_v<Type>)
+            _state = State::TrivialValue;
+        else
+            _state = State::Value;
+    // The type needs to be allocated
+    } else {
+        if ((_state == State::Allocation || _state == State::TrivialAllocation) && _cache.reg1) [[likely]] {
+            if (_cache.allocationSize() >= sizeof(ConcreteType) && _cache.allocationAlignment() >= alignof(ConcreteType)) {
+
+            }
+        }
+
+        switch (_state) {
+        case State::Allocation:
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceAllocated::Yes>();
+        case State::TrivialAllocation:
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceAllocated::Yes>();
+        default:
+
+        }
+        std::construct_at<Type>(reinterpret_cast<void *&>(_cache), std::forward<Type>(other));
+        if constexpr (std::is_trivial_v<Type>)
+            _state = State::TrivialAllocation;
+        else
+            _state = State::Allocation;
     }
 
     // @todo: if we check for movable we can force move !! std::forward doesn't move implicitly by-value arguments !!
 
     // if constexpr (IsEmplaceMovable<Type>) {
-        if constexpr (IsOptimized<Type>) {
-            std::construct_at<Type>(&_storage, std::forward<Type>(other));
-            if constexpr (std::is_trivial_v<Type>)
-                _state = State::TrivialValue;
-            else
-                _state = State::Value;
-        } else {
-            std::construct_at<Type>(reinterpret_cast<void *&>(_storage), std::forward<Type>(other));
-            if constexpr (std::is_trivial_v<Type>)
-                _state = State::TrivialAllocation;
-            else
-                _state = State::Allocation;
-        }
     // } else {
 
     // }

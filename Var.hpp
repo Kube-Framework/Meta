@@ -17,8 +17,39 @@ namespace kF::Meta
 class alignas_half_cacheline kF::Meta::Var
 {
 public:
+    struct alignas_quarter_cacheline Cache
+    {
+        std::uint64_t reg0 { 0ull };
+        std::uint64_t reg1 { 0ull };
+
+        /** @brief Destructor */
+        constexpr ~Cache(void) noexcept = default;
+
+        /** @brief Default constructor */
+        constexpr Cache(void) noexcept = default;
+
+        /** @brief Copy constructor */
+        constexpr Cache(const Cache &other) noexcept : reg0(other.reg0), reg1(other.reg1) {}
+
+        /** @brief Copy assignment */
+        constexpr Cache &operator=(const Cache &other) noexcept { reg0 = other.reg0; reg1 = other.reg1; }
+
+
+        /** @brief Get allocation size (only valid when the cache contains an allocation pointer in reg0) */
+        [[nodiscard]] constexpr std::uint64_t allocationSize(void) const noexcept { return reg1 & 0xFFFFFFFF; }
+
+        /** @brief Get allocation size (only valid when the cache contains an allocation pointer in reg0) */
+        [[nodiscard]] constexpr std::uint64_t allocationAlignment(void) const noexcept { return reg1 >> 32ull; }
+
+        /** @brief Set the allocation meta data */
+        constexpr void setAllocation(const void * const data, const std::size_t size, const std::size_t alignment) noexcept
+            { reinterpret_cast<const void *&>(reg0) = data; reg1 = size & (alignment << 32ull); }
+    };
+
+    static_assert_fit_quarter_cacheline(Cache);
+
     /** @brief Optimized size usable for instances of variables */
-    static constexpr auto OptimizedSize = Core::CacheLineQuarterSize;
+    static constexpr auto OptimizedSize = sizeof(Cache);
 
     /** @brief State of a variable */
     enum class State : std::uint32_t {
@@ -34,11 +65,17 @@ public:
     /** @brief Reset members template option */
     enum class ResetMembers : bool { No = false, Yes = true };
 
+    /** @brief Instance allocated template option */
+    enum class InstanceAllocated : bool { No = false, Yes = true };
+
     /** @brief Destroy instance template option */
     enum class DestroyInstance : bool { No = false, Yes = true };
 
     /** @brief Instance optimized template option */
     enum class InstanceOptimized : bool { No = false, Yes = true };
+
+    /** @brief Instance trivial template option */
+    enum class InstanceTrivial : bool { No = false, Yes = true };
 
 
     /** @brief Check if a type is movable when emplaced into a Var */
@@ -55,16 +92,16 @@ public:
 
 
     /** @brief Destructor */
-    ~Var(void) { destroy<ResetMembers::No>(); }
+    ~Var(void);
 
     /** @brief Default constructor, initialize to undefined state */
     Var(void) noexcept = default;
 
     /** @brief Copy constructor, deep-copy other value (may be expensive) */
-    Var(const Var &other) { emplace<DestroyInstance::No>(other); }
+    Var(const Var &other);
 
     /** @brief Move constructor, move other value */
-    Var(Var &&other) { emplace<DestroyInstance::No>(std::move(other)); }
+    Var(Var &&other);
 
 
     /** @brief Copy assignment, deep-copy other value (may be expensive) */
@@ -106,9 +143,11 @@ public:
 
     /** @brief Destroy the variable
      *  @tparam State Compile-time knowledge of the runtime variable state (unsafe if not exactly equal to current runtime state)
-     *  @tparam ResetMembers If 'Yes', then member variables are reseted, else the variable is unsafe to use */
-    template<State VarState, ResetMembers ShouldResetMembers = ResetMembers::Yes>
-    void destroy(void);
+     *  @tparam ResetMembers If 'Yes', then member variables are reseted, else the variable is unsafe to use
+     *  @tparam InstanceTrivial If 'Yes', then no destructor is called
+     *  @tparam InstanceAllocated If 'Yes', then owned instance treated as an allocation and is deallocated */
+    template<ResetMembers ShouldResetMembers = ResetMembers::Yes, InstanceTrivial IsInstanceTrivial, InstanceAllocated IsInstanceAllocated>
+    void destroy(void) noexcept(IsInstanceTrivial == kF::Meta::Var::InstanceTrivial::Yes);
 
 
     /** @brief Emplace a value using another existing one */
@@ -116,9 +155,17 @@ public:
     void emplace(Type &&other) noexcept(IsEmplaceNothrow<Type>);
 
 private:
-    std::aligned_storage<OptimizedSize, OptimizedSize> _storage {};
+    Cache _cache {};
     Type _type {};
     State _state { State::Undefined };
+
+    /** @brief Allocate memory */
+    static inline void *Allocate(const std::size_t size, const std::size_t alignment) noexcept
+        { return Meta::MetaAllocator::Allocate(size, alignment); }
+
+    /** @brief Deallocate memory */
+    static inline void Deallocate(void * const instance, const std::size_t size, const std::size_t alignment) noexcept
+        { return Meta::MetaAllocator::Deallocate(instance, size, alignment); }
 };
 
 static_assert_fit_half_cacheline(kF::Meta::Var);
