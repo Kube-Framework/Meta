@@ -5,111 +5,136 @@
 
 #include "Var.hpp"
 
-inline kF::Meta::~Var(void)
+force_inline kF::Meta::Var::~Var(void)
 {
     destroy<ResetMembers::No>();
 }
 
-inline kF::Meta::Var(const Var &other)
+force_inline kF::Meta::Var::Var(const Var &other)
 {
-    emplace<DestroyInstance::No>(other);
+    emplace<const Var &, DestroyInstance::No>(other);
 }
 
-inline kF::Meta::Var(Var &&other)
+force_inline kF::Meta::Var::Var(Var &&other)
 {
-    emplace<DestroyInstance::No>(std::move(other));
+    emplace<Var &&, DestroyInstance::No>(std::move(other));
 }
 
-inline const void *kF::Meta::Var::data(void) const noexcept
+force_inline const void *kF::Meta::Var::data(void) const noexcept
 {
-    const auto s = static_cast<std::uint32_t>(_state);
-    if (s != State::Undefined && s < static_cast<std::uint32_t>(State::Allocation)) [[likely]]
+    if (_state != State::Undefined && static_cast<std::uint32_t>(_state) < static_cast<std::uint32_t>(State::Allocation)) [[likely]]
         return data<InstanceOptimized::Yes>();
     else
         return data<InstanceOptimized::No>();
 }
 
 template<kF::Meta::Var::InstanceOptimized IsInstanceOptimized>
-inline const void *kF::Meta::Var::data(void) const noexcept
+force_inline const void *kF::Meta::Var::data(void) const noexcept
 {
-    if constexpr (IsInstanceOptimized == IsInstanceOptimized::Yes) {
-        return reinterpret_cast<const void *>(&_cache);
-    } else {
-        return reinterpret_cast<const void *&>(_cache);
-    }
+    if constexpr (IsInstanceOptimized == IsInstanceOptimized::Yes)
+        return _cache.cacheData();
+    else
+        return _cache.allocationData();
 }
 
-template<kF::Meta::Var::ResetMembers ShouldResetMembers>
+template<kF::Meta::Var::ResetMembers IsResetMembers>
 inline void kF::Meta::Var::destroy(void)
 {
     switch (_state) {
     case State::Value:
-        return destroy<ShouldResetMembers, InstanceTrivial::No, InstanceAllocated::No>();
+        return destroy<IsResetMembers, InstanceTrivial::No, InstanceOptimized::Yes>();
     case State::Allocation:
-        return destroy<ShouldResetMembers, InstanceTrivial::No, InstanceAllocated::Yes>();
+        return destroy<IsResetMembers, InstanceTrivial::No, InstanceOptimized::No>();
     case State::TrivialAllocation:
-        return destroy<ShouldResetMembers, InstanceTrivial::Yes, InstanceAllocated::Yes>();
+        return destroy<IsResetMembers, InstanceTrivial::Yes, InstanceOptimized::No>();
     default:
-        return destroy<ShouldResetMembers, InstanceTrivial::Yes, InstanceAllocated::No>();
+        return destroy<IsResetMembers, InstanceTrivial::Yes, InstanceOptimized::Yes>();
     }
 }
 
-template<kF::Meta::Var::ResetMembers ShouldResetMembers, kF::Meta::Var::InstanceTrivial IsInstanceTrivial, kF::Meta::Var::InstanceAllocated IsInstanceAllocated>
+template<kF::Meta::Var::ResetMembers IsResetMembers, kF::Meta::Var::InstanceTrivial IsInstanceTrivial,
+        kF::Meta::Var::InstanceOptimized IsInstanceOptimized, kF::Meta::Var::DeallocateInstance IsDeallocateInstance>
 inline void kF::Meta::Var::destroy(void) noexcept(IsInstanceTrivial == kF::Meta::Var::InstanceTrivial::Yes)
 {
-    // If the type is a non-trivial value, destroy it
-    if constexpr (IsInstanceAllocated == InstanceAllocated::No) {
+    static_assert(!(IsDeallocateInstance == DeallocateInstance::No && IsResetMembers == ResetMembers::Yes),
+            "Destroy cannot reset members if allocation is not deallocated, it will induce leaks");
+
+    // If the type is optimized, destroy it when its a non-trivial value
+    if constexpr (IsInstanceOptimized == InstanceOptimized::Yes) {
         if constexpr (IsInstanceTrivial == InstanceTrivial::No) {
             const auto desc = _type.descriptor();
-            const auto instance = data<VarState>();
+            const auto instance = data<InstanceOptimized::Yes>();
             if (desc->destructorFunc)
                 desc->destructorFunc(instance);
         }
-    // If the type is an allocation, destroy (only non-trivial types) and deallocate it
+    // Else the type is an allocation, destroy non-trivial types and deallocate if allowed
     } else {
-        const auto desc = _type.descriptor();
-        const auto instance = data<VarState>();
+        [[maybe_unused]] const auto instance = data<InstanceOptimized::No>();
         if constexpr (IsInstanceTrivial == InstanceTrivial::No) {
+            const auto desc = _type.descriptor();
             if (desc->destructorFunc)
                 desc->destructorFunc(instance);
         }
-        Deallocate(instance, desc->typeSize, desc->typeAlignment);
+        if constexpr (IsDeallocateInstance == DeallocateInstance::Yes) {
+            Deallocate(instance, _cache.allocationSize(), _cache.allocationAlignment());
+        }
     }
 
-    if constexpr (ShouldResetMembers == ResetMembers::Yes) {
+    if constexpr (IsResetMembers == ResetMembers::Yes) {
+        _cache = Cache {};
         _type = Type {};
         _state = State::Undefined;
     }
 }
 
-template<typename Type, kF::Meta::Var::DestroyInstance ShouldDestroyInstance>
+template<typename Type, kF::Meta::Var::DestroyInstance IsDestroyInstance>
 inline void kF::Meta::Var::emplace(Type &&other) noexcept(kF::Meta::Var::IsEmplaceNothrow<Type>)
 {
     using ConcreteType = std::remove_cvref_t<Type>;
 
     // The type fits into the optimized cache
-    if constexpr (IsOptimized<Type>) {
-        if constexpr (ShouldDestroyInstance == ShouldDestroyInstance::Yes) {
+    if constexpr (IsOptimized<ConcreteType>) {
+        if constexpr (IsDestroyInstance == DestroyInstance::Yes) {
             destroy<ResetMembers::No>();
         }
         std::construct_at<Type>(&_cache, std::forward<Type>(other));
-        if constexpr (std::is_trivial_v<Type>)
+        if constexpr (std::is_trivial_v<Type>) {
             _state = State::TrivialValue;
-        else
+        } else {
             _state = State::Value;
+        }
     // The type needs to be allocated
     } else {
-        if ((_state == State::Allocation || _state == State::TrivialAllocation) && _cache.reg1) [[likely]] {
+        switch (_state) {
+        case State::Undefined:
+            break;
+        case State::Value:
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceOptimized::Yes>();
+            break;
+        case State::Allocation:
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceOptimized::No, DeallocateInstance::No>();
+            [[fallthrough]];
+        case State::TrivialAllocation:
             if (_cache.allocationSize() >= sizeof(ConcreteType) && _cache.allocationAlignment() >= alignof(ConcreteType)) {
 
-            }
+            } else
+                Deallocate(data<InstanceOptimized::No>)
+            break;
+        default:
+            destroy<ResetMembers::No, InstanceTrivial::Yes, InstanceOptimized::Yes>();
+            break;
         }
+        switch
+        if ((_state == State::Allocation || _state == State::TrivialAllocation) && _cache.allocationSize() >= sizeof(ConcreteType)
+                && _cache.allocationAlignment() >= alignof(ConcreteType)) {
+        } else
+            destroy<ResetMembers::No, InstanceTrivial::
 
         switch (_state) {
         case State::Allocation:
-            destroy<ResetMembers::No, InstanceTrivial::No, InstanceAllocated::Yes>();
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceOptimized::No>();
         case State::TrivialAllocation:
-            destroy<ResetMembers::No, InstanceTrivial::No, InstanceAllocated::Yes>();
+            destroy<ResetMembers::No, InstanceTrivial::No, InstanceOptimized::No>();
         default:
 
         }
