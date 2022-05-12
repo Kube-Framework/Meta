@@ -1,4 +1,4 @@
-kube_add_library(KubeMeta
+kube_add_library(Meta
     SOURCES
         Meta.hpp
         Meta.cpp
@@ -10,5 +10,5 @@ kube_add_library(KubeMeta
         Resolver.cpp
 
     LIBRARIES
-        KubeCore
+        Core
 )

@@ -1,4 +1,4 @@
-kube_add_benchmarks(KubeMetaBenchmarks
+kube_add_benchmarks(MetaBenchmarks
     SOURCES
 
     LIBRARIES

@@ -67,7 +67,8 @@ public:
 
 
     /** @brief State of a variable */
-    enum class State : std::uint32_t {
+    enum class State : std::uint32_t
+    {
         Undefined = 0,
         Value,
         TrivialValue,
